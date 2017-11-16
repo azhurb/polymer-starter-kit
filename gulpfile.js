@@ -72,7 +72,7 @@ var imageOptimizeTask = function(src, dest) {
 
 var optimizeHtmlTask = function(src, dest) {
   var assets = $.useref.assets({
-    searchPath: ['.tmp', 'app']
+    searchPath: ['.tmp', 'dist']
   });
 
   return gulp.src(src)
@@ -135,11 +135,10 @@ gulp.task('copy', function() {
 
   // Copy over only the bower_components we need
   // These are things which cannot be vulcanized
-  var bower = gulp.src([
-    'app/bower_components/{webcomponentsjs,platinum-sw,sw-toolbox,promise-polyfill}/**/*'
-  ]).pipe(gulp.dest(dist('bower_components')));
+  var tmp = gulp.src(['app/bower_components/**/*'])
+    .pipe(gulp.dest('.tmp/bower_components'));
 
-  return merge(app, bower)
+  return merge(app, tmp)
     .pipe($.size({
       title: 'copy'
     }));
@@ -163,7 +162,7 @@ gulp.task('html', function() {
 
 // Vulcanize granular configuration
 gulp.task('vulcanize', function() {
-  return gulp.src('app/elements/elements.html')
+  return gulp.src('.tmp/elements/elements.html') // look in .tmp dir!
     .pipe($.vulcanize({
       stripComments: true,
       inlineCss: true,
@@ -171,6 +170,19 @@ gulp.task('vulcanize', function() {
     }))
     .pipe(gulp.dest(dist('elements')))
     .pipe($.size({title: 'vulcanize'}));
+});
+
+// Transpile all JS to ES5.
+gulp.task('js', function () {
+  return gulp.src(['app/**/*.{js,html}', '!app/bower_components/**/*'])
+    .pipe($.if('*.html', $.crisper({scriptInHead: false}))) // Extract JS from .html files
+    .pipe($.sourcemaps.init())
+    .pipe($.if('*.js', $.babel({
+        presets: ['es2015']
+    })))
+    .pipe($.sourcemaps.write())
+    .pipe(gulp.dest('.tmp/'))
+    .pipe(gulp.dest('dist/'));
 });
 
 // Generate config data for the <sw-precache-cache> element.
@@ -237,9 +249,9 @@ gulp.task('serve', ['styles'], function() {
     }
   });
 
-  gulp.watch(['app/**/*.html', '!app/bower_components/**/*.html'], reload);
+  gulp.watch(['app/**/*.html', '!app/bower_components/**/*.html'], ['js', reload]);
   gulp.watch(['app/styles/**/*.css'], ['styles', reload]);
-  gulp.watch(['app/scripts/**/*.js'], reload);
+  gulp.watch(['app/scripts/**/*.js'], ['js', reload]); //
   gulp.watch(['app/images/**/*'], reload);
 });
 
@@ -271,7 +283,7 @@ gulp.task('default', ['clean'], function(cb) {
   // Uncomment 'cache-config' if you are going to use service workers.
   runSequence(
     ['ensureFiles', 'copy', 'styles'],
-    ['images', 'fonts', 'html'],
+    ['images', 'fonts', 'html', 'js'],
     'vulcanize', // 'cache-config',
     cb);
 });
